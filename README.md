@@ -126,6 +126,8 @@ src/
 │   │   ├── badges/page.tsx       # Badges & certifications
 │   │   ├── leaderboard/page.tsx  # Classement XP (podium + rangs)
 │   │   ├── certificates/[id]/    # Certificat public, partageable, imprimable
+│   │   ├── instructor/           # Espace formateur (créer/publier leçons & formations)
+│   │   ├── settings/page.tsx     # Réglages des notifications (interrupteurs)
 │   │   ├── jobs/
 │   │   │   ├── page.tsx          # Offres d'emploi
 │   │   │   └── [slug]/
@@ -190,6 +192,7 @@ src/
 - `user_badges` — badges obtenus par les étudiants
 - `lesson_completions` — leçons validées (unique user+lesson, XP attribué)
 - `course_reviews` — avis vérifiés (1-5★, unique user+cours, note recalculée)
+- `users.notification_prefs` — préférences de notifications (JSON, catégories learning/applications/payments)
 - `notifications` — fil de notifications in-app (badge, cours, candidature…)
 - `payments` — paiements Mobile Money (FedaPay, KkiaPay, MTN, Orange, Moov, Wave)
 - `companies` — entreprises partenaires
@@ -281,6 +284,7 @@ curl -X POST http://localhost:3000/api/v1/payments \
 | `/api/v1/instructor/courses/[id]` | PATCH / DELETE | 🧑‍🏫 Modifier, `publish` (≥1 leçon) / `unpublish` / supprimer (409 si inscrits) |
 | `/api/v1/instructor/courses/[id]/lessons` | GET / POST | 🧑‍🏫 Leçons ordonnées / ajouter (durée du cours recalculée) |
 | `/api/v1/instructor/courses/[id]/lessons/[lessonId]` | DELETE | 🧑‍🏫 Supprimer une leçon |
+| `/api/v1/me/notification-prefs` | GET / PATCH | 🔐 Mes préférences de notifications (mutuellement exclusives par catégorie) |
 
 🔐 = authentification requise (cookie JWT `as_access`).
 🔑 = secret partagé (`PAYMENTS_WEBHOOK_SECRET`).

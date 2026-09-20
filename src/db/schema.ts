@@ -202,6 +202,12 @@ export const users = pgTable(
     xp: integer("xp").default(0).notNull(),
     streak: integer("streak").default(0).notNull(),
     lastActivityAt: timestamp("last_activity_at", { withTimezone: true }),
+    // Préférences de notifications in-app (null = tout activé)
+    notificationPrefs: jsonb("notification_prefs").$type<{
+      learning?: boolean;
+      applications?: boolean;
+      payments?: boolean;
+    }>(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
