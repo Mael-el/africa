@@ -6,6 +6,7 @@
 
 import Link from "next/link";
 import { useAuth } from "@/lib/auth/context";
+import { NotificationBell } from "@/components/NotificationBell";
 
 export function Navbar() {
   const { user, isAuthenticated, logout } = useAuth();
@@ -30,14 +31,20 @@ export function Navbar() {
         <nav className="hidden items-center gap-1 md:flex">
           <NavLink href="/courses">Formations</NavLink>
           <NavLink href="/badges">Badges</NavLink>
+          <NavLink href="/leaderboard">Classement</NavLink>
           <NavLink href="/jobs">Emplois</NavLink>
           {isAuthenticated && <NavLink href="/dashboard">Dashboard</NavLink>}
+          {isAuthenticated && <NavLink href="/recruiter">Recruteur</NavLink>}
+          {isAuthenticated && user?.role === "admin" && (
+            <NavLink href="/admin">Admin</NavLink>
+          )}
           <NavLink href="/about">À propos</NavLink>
         </nav>
 
         <div className="flex items-center gap-2">
           {isAuthenticated && user ? (
             <>
+              <NotificationBell />
               <Link
                 href="/profile/me"
                 className="flex items-center gap-2 rounded-lg border border-neutral-800 px-3 py-1.5 text-sm text-white transition hover:border-orange-500/50"

@@ -2,9 +2,11 @@
 // CARTE D'OFFRE D'EMPLOI — AfricaSkills
 // ============================================================
 
+import Link from "next/link";
 import { formatXof, jobTypeLabel } from "@/lib/format";
 
 export interface JobCardProps {
+  slug: string;
   title: string;
   type: "full_time" | "part_time" | "freelance" | "internship" | "contract";
   location: string | null;
@@ -22,6 +24,7 @@ export interface JobCardProps {
 }
 
 export function JobCard({
+  slug,
   title,
   type,
   location,
@@ -95,9 +98,12 @@ export function JobCard({
         </div>
       )}
 
-      <button className="mt-5 w-full rounded-lg bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-2.5 text-sm font-semibold text-black transition hover:from-orange-400 hover:to-amber-400">
-        Postuler →
-      </button>
+      <Link
+        href={`/jobs/${slug}`}
+        className="mt-5 block w-full rounded-lg bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-2.5 text-center text-sm font-semibold text-black transition hover:from-orange-400 hover:to-amber-400"
+      >
+        Voir l’offre →
+      </Link>
     </div>
   );
 }

@@ -18,6 +18,7 @@ import {
   jobApplications,
   jobs,
   companies,
+  lessonCompletions,
 } from "@/db/schema";
 import { eq, desc, sql, and, gte } from "drizzle-orm";
 import { requireUser, AuthError } from "@/lib/auth";
@@ -205,8 +206,8 @@ export async function GET() {
       skills,
       projects,
       applications,
-      // Progression sur 30 jours (mock pour démo)
-      progressChart: generateMockProgression(),
+      // Progression réelle sur 30 jours (lesson_completions)
+      progressChart: await getProgressChart(uid),
     });
   } catch (error) {
     if (error instanceof AuthError) {
@@ -221,19 +222,37 @@ export async function GET() {
 }
 
 /**
- * Génère une progression fictive sur 30 jours pour la démo.
- * En production : agréger depuis les events `lesson_completed`.
+ * Progression réelle sur les 30 derniers jours : XP de leçons validées
+ * par jour, agrégés depuis `lesson_completions` (fuseau UTC).
+ * Les jours sans activité valent 0 pour que le graphe soit continu.
  */
-function generateMockProgression() {
+async function getProgressChart(userId: string) {
+  const since = new Date();
+  since.setUTCHours(0, 0, 0, 0);
+  since.setUTCDate(since.getUTCDate() - 29);
+
+  const rows = await db
+    .select({
+      day: sql<string>`to_char(${lessonCompletions.completedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`,
+      xp: sql<number>`coalesce(sum(${lessonCompletions.xpAwarded}), 0)::int`,
+    })
+    .from(lessonCompletions)
+    .where(
+      and(
+        eq(lessonCompletions.userId, userId),
+        gte(lessonCompletions.completedAt, since)
+      )
+    )
+    .groupBy(sql`1`);
+
+  const byDay = new Map(rows.map((r) => [r.day, r.xp]));
+
   const days: { date: string; xp: number }[] = [];
-  const now = new Date();
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - i);
-    days.push({
-      date: d.toISOString().slice(0, 10),
-      xp: Math.floor(Math.random() * 120) + (i < 15 ? 40 : 10),
-    });
+  const cursor = new Date(since);
+  for (let i = 0; i < 30; i++) {
+    const key = cursor.toISOString().slice(0, 10);
+    days.push({ date: key, xp: byDay.get(key) ?? 0 });
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
   return days;
 }

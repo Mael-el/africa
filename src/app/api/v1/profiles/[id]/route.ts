@@ -14,8 +14,9 @@ import {
   domains,
   enrollments,
   courses,
+  courseReviews,
 } from "@/db/schema";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, and, isNotNull } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +59,7 @@ export async function GET(
     }
 
     // Données publiques agrégées
-    const [skills, projects, earnedBadges, followedDomains, statsEnroll] =
+    const [skills, projects, earnedBadges, followedDomains, statsEnroll, rankRow, certificates, latestReviews] =
       await Promise.all([
         db
           .select()
@@ -99,6 +100,55 @@ export async function GET(
           })
           .from(enrollments)
           .where(eq(enrollments.userId, id)),
+        // Rang au classement XP (même convention que /leaderboard)
+        db
+          .select({
+            rank: sql<number>`(select count(*) + 1 from ${users} u2 where u2.xp > ${profile.xp} and u2.status = 'active')::int`,
+          })
+          .from(users)
+          .where(eq(users.id, id))
+          .limit(1),
+        // Certificats : formations terminées à 100 % (lien de vérification)
+        db
+          .select({
+            enrollmentId: enrollments.id,
+            completedAt: enrollments.completedAt,
+            slug: courses.slug,
+            title: courses.title,
+            durationHours: courses.durationHours,
+            domainName: domains.name,
+            domainIcon: domains.icon,
+          })
+          .from(enrollments)
+          .innerJoin(courses, eq(enrollments.courseId, courses.id))
+          .innerJoin(domains, eq(courses.domainId, domains.id))
+          .where(
+            and(
+              eq(enrollments.userId, id),
+              eq(enrollments.status, "completed")
+            )
+          )
+          .orderBy(desc(enrollments.completedAt))
+          .limit(6),
+        // Derniers avis vérifiés laissés (avec commentaire)
+        db
+          .select({
+            rating: courseReviews.rating,
+            comment: courseReviews.comment,
+            createdAt: courseReviews.createdAt,
+            courseSlug: courses.slug,
+            courseTitle: courses.title,
+          })
+          .from(courseReviews)
+          .innerJoin(courses, eq(courseReviews.courseId, courses.id))
+          .where(
+            and(
+              eq(courseReviews.userId, id),
+              isNotNull(courseReviews.comment)
+            )
+          )
+          .orderBy(desc(courseReviews.createdAt))
+          .limit(6),
       ]);
 
     return NextResponse.json({
@@ -108,11 +158,14 @@ export async function GET(
       projects,
       badges: earnedBadges,
       domains: followedDomains,
+      certificates,
+      reviews: latestReviews,
       statistics: {
         coursesTotal: statsEnroll[0]?.count ?? 0,
         coursesCompleted: statsEnroll[0]?.completed ?? 0,
         projectsCount: projects.length,
         badgesCount: earnedBadges.length,
+        rank: rankRow[0]?.rank ?? 1,
       },
     });
   } catch (error) {
