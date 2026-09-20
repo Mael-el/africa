@@ -35,6 +35,10 @@ export function Navbar() {
           <NavLink href="/jobs">Emplois</NavLink>
           {isAuthenticated && <NavLink href="/dashboard">Dashboard</NavLink>}
           {isAuthenticated && <NavLink href="/recruiter">Recruteur</NavLink>}
+          {isAuthenticated &&
+            (user?.role === "instructor" || user?.role === "admin") && (
+              <NavLink href="/instructor">Formateur</NavLink>
+            )}
           {isAuthenticated && user?.role === "admin" && (
             <NavLink href="/admin">Admin</NavLink>
           )}

@@ -277,6 +277,10 @@ curl -X POST http://localhost:3000/api/v1/payments \
 | `/api/v1/admin/overview` | GET | 🛡️ Stats plateforme temps réel (utilisateurs, revenus, avis, inscriptions 14j) |
 | `/api/v1/admin/reviews` / `[id]` | GET / DELETE | 🛡️ Derniers avis / modération (suppression + note recalculée) |
 | `/api/v1/admin/users` / `[id]` | GET / PATCH | 🛡️ Recherche utilisateurs (`?q=`, `?role=`) / suspendre-réactiver (pas soi ni admin) |
+| `/api/v1/instructor/courses` | GET / POST | 🧑‍🏫 Mes formations + stats / créer un brouillon |
+| `/api/v1/instructor/courses/[id]` | PATCH / DELETE | 🧑‍🏫 Modifier, `publish` (≥1 leçon) / `unpublish` / supprimer (409 si inscrits) |
+| `/api/v1/instructor/courses/[id]/lessons` | GET / POST | 🧑‍🏫 Leçons ordonnées / ajouter (durée du cours recalculée) |
+| `/api/v1/instructor/courses/[id]/lessons/[lessonId]` | DELETE | 🧑‍🏫 Supprimer une leçon |
 
 🔐 = authentification requise (cookie JWT `as_access`).
 🔑 = secret partagé (`PAYMENTS_WEBHOOK_SECRET`).
