@@ -120,10 +120,21 @@ src/
 │   │   │   ├── page.tsx          # Catalogue filtrable
 │   │   │   └── [slug]/
 │   │   │       ├── page.tsx      # Détail d'une formation
-│   │   │       └── CourseCheckout.tsx  # Paiement Mobile Money
+│   │   │       ├── CourseCheckout.tsx  # Paiement Mobile Money
+│   │   │       ├── CourseReviews.tsx   # Avis vérifiés (notes 1-5★)
+│   │   │       └── learn/page.tsx      # Espace d'apprentissage (leçons, XP)
 │   │   ├── badges/page.tsx       # Badges & certifications
-│   │   ├── jobs/page.tsx         # Offres d'emploi
+│   │   ├── leaderboard/page.tsx  # Classement XP (podium + rangs)
+│   │   ├── certificates/[id]/    # Certificat public, partageable, imprimable
+│   │   ├── instructor/           # Espace formateur (créer/publier leçons & formations)
+│   │   ├── settings/page.tsx     # Réglages des notifications (interrupteurs)
+│   │   ├── jobs/
+│   │   │   ├── page.tsx          # Offres d'emploi
+│   │   │   └── [slug]/
+│   │   │       ├── page.tsx      # Détail d'une offre
+│   │   │       └── JobApplyPanel.tsx   # Candidature (lettre + CV)
 │   │   ├── dashboard/page.tsx    # Espace étudiant
+│   │   ├── recruiter/page.tsx    # Espace recruteur (offres + candidatures)
 │   │   └── about/page.tsx        # À propos
 │   ├── api/
 │   │   ├── seed/route.ts         # Initialisation de la DB
@@ -132,12 +143,21 @@ src/
 │   │   ├── badges/route.ts       # Liste des badges
 │   │   ├── jobs/route.ts         # Offres d'emploi
 │   │   ├── payments/route.ts     # Paiement Mobile Money (mock)
-│   │   └── health/route.ts       # Healthcheck
+│   │   ├── health/route.ts       # Healthcheck
+│   │   └── v1/
+│   │       ├── auth/             # JWT, OTP, 2FA, sessions
+│   │       ├── profiles/         # Profil, skills, projets, stats
+│   │       ├── dashboard/route.ts# Agrégation tableau de bord
+│   │       ├── enrollments/      # Inscriptions + progression leçons
+│   │       ├── jobs/             # Candidatures (apply, suivi, retrait)
+│   │       ├── notifications/    # Fil de notifications in-app
+│   │       └── recruiter/        # Espace entreprise (offres, candidatures)
 │   ├── layout.tsx                # Layout global + Navbar + Footer
 │   ├── globals.css               # Thème africain (orange/or/émeraude)
 │   └── not-found.tsx             # Page 404
 ├── components/
-│   ├── Navbar.tsx                # Navigation sticky
+│   ├── Navbar.tsx                # Navigation sticky (+ cloche 🔔)
+│   ├── NotificationBell.tsx      # Centre de notifications
 │   ├── Footer.tsx                # Pied de page
 │   ├── CourseCard.tsx            # Carte de formation
 │   ├── DomainCard.tsx            # Carte de domaine
@@ -147,7 +167,13 @@ src/
 │   ├── index.ts                  # Client Drizzle (pool pg)
 │   └── schema.ts                 # Schéma complet (10 tables)
 └── lib/
-    ├── seed-data.ts              # Données de seed
+    ├── seed-data.ts              # Données de seed (+ 80 leçons)
+    ├── gamification.ts           # XP, séries quotidiennes, badges auto
+    ├── notifications.ts          # Création de notifications (best-effort)
+    ├── recruiter.ts              # Guard requireRecruiter (entreprise)
+    ├── courses-query.ts          # Filtres + tri du catalogue (partagés)
+    ├── payments/                 # Providers (mock/FedaPay/KkiaPay) + règlement
+    ├── auth/                     # JWT, guards, OTP/2FA, rate-limit
     └── format.ts                 # Utilitaires (XOF, rareté, etc.)
 ```
 
@@ -164,6 +190,10 @@ src/
 - `enrollments` — inscriptions des étudiants
 - `badges` — certifications (common / rare / epic / legendary)
 - `user_badges` — badges obtenus par les étudiants
+- `lesson_completions` — leçons validées (unique user+lesson, XP attribué)
+- `course_reviews` — avis vérifiés (1-5★, unique user+cours, note recalculée)
+- `users.notification_prefs` — préférences de notifications (JSON, catégories learning/applications/payments)
+- `notifications` — fil de notifications in-app (badge, cours, candidature…)
 - `payments` — paiements Mobile Money (FedaPay, KkiaPay, MTN, Orange, Moov, Wave)
 - `companies` — entreprises partenaires
 - `jobs` — offres d'emploi
@@ -174,27 +204,35 @@ Voir [`src/db/schema.ts`](./src/db/schema.ts) pour le détail.
 
 ## 💳 Paiements Mobile Money
 
-La route `/api/payments` simule actuellement l'intégration avec :
+Le module v1 (`/api/v1/payments`) implémente le flux réel des providers de
+paiement, derrière une **abstraction interchangeable** (`src/lib/payments/`) :
 
-- **MTN Mobile Money** 🟡
-- **Orange Money** 🟠
-- **Moov Money** 🔵
-- **Wave** 🔵
-- **FedaPay** 💳
-- **KkiaPay** ⚡
+1. `POST /api/v1/payments` → initiation → paiement **pending** + instructions
+2. Le provider confirme plus tard via `POST /api/v1/payments/webhook`
+   (en-tête `x-webhook-secret`, remplacé par une signature HMAC en prod)
+3. Au succès → paiement **success** + **inscription auto** + notification
 
-**En production**, il faudra :
+Le provider actif est choisi par `PAYMENTS_PROVIDER` (`mock` par défaut,
+`fedapay` / `kkiapay` quand les clés sont configurées). En mode **mock**, la
+confirmation est simulée par le bouton démo du checkout qui appelle
+`POST /api/v1/payments/[reference]/confirm`.
 
-1. Remplacer le mock par l'appel à l'API FedaPay/KkiaPay
-2. Stocker les clés API dans `.env` (`FEDAPAY_SECRET_KEY`, `KKIAPAY_PRIVATE_KEY`)
-3. Gérer les webhooks de confirmation de paiement
+- **MTN Mobile Money** 🟡 · **Orange Money** 🟠 · **Moov Money** 🔵
+- **FedaPay** 💳 · **KkiaPay** ⚡
+
+**En production**, il reste à :
+
+1. Implémenter l'appel API dans `FedaPayProvider.initiate()` (squelette prêt)
+2. Vérifier la signature HMAC du webhook au lieu du secret d'en-tête
+3. Configurer l'URL du webhook dans le back-office provider
 4. Implémenter la réconciliation comptable
 
-Exemple d'appel :
+Exemple d'appel (authentifié) :
 
 ```bash
-curl -X POST http://localhost:3000/api/payments \
+curl -X POST http://localhost:3000/api/v1/payments \
   -H "Content-Type: application/json" \
+  -H "Cookie: as_access=…" \
   -d '{
     "courseSlug": "react-nextjs-fullstack",
     "phoneNumber": "+229 01 00 00 00",
@@ -209,14 +247,51 @@ curl -X POST http://localhost:3000/api/payments \
 | Endpoint | Méthode | Description |
 |----------|---------|-------------|
 | `/api/health` | GET | Healthcheck |
-| `/api/seed` | POST | Initialise la DB |
+| `/api/seed` | POST | Initialise la DB (+ leçons, idempotent) |
 | `/api/seed` | GET | Compte les entités |
 | `/api/domains` | GET | Liste des 12 domaines |
-| `/api/courses` | GET | Catalogue (filtres : `?domain=`, `?q=`, `?limit=`) |
+| `/api/courses` | GET | Catalogue (filtres : `?domain=`, `?q=` titre+sous-titre+description, `?level=`, `?price=free\|paid`, `?sort=popular\|rating\|newest\|price_asc\|price_desc`, `?limit=`) |
 | `/api/courses/[slug]` | GET | Détail d'un cours |
 | `/api/badges` | GET | Tous les badges |
 | `/api/jobs` | GET | Offres d'emploi actives |
-| `/api/payments` | POST | Paiement Mobile Money |
+| `/api/payments` | POST | Paiement Mobile Money (mock, rattache à l'utilisateur connecté) |
+| `/api/v1/enrollments` | GET | 🔐 Mes inscriptions (cours + domaine + progression) |
+| `/api/v1/enrollments` | POST | 🔐 S'inscrire à un cours (gratuit ou 402 si paiement requis) |
+| `/api/v1/enrollments/[courseSlug]` | GET | 🔐 Détail : leçons + état de complétion + XP |
+| `/api/v1/enrollments/[courseSlug]` | DELETE | 🔐 Se désinscrire (progression conservée) |
+| `/api/v1/enrollments/[courseSlug]/lessons/[lessonId]/complete` | POST | 🔐 Valide une leçon → XP, progression, bonus, badges |
+| `/api/v1/jobs/applications` | GET | 🔐 Mes candidatures (offre + entreprise) |
+| `/api/v1/jobs/applications/[id]` | GET / DELETE | 🔐 Détail / retirer ma candidature |
+| `/api/v1/jobs/[jobId]/apply` | GET / POST | 🔐 Statut de ma candidature / postuler (409 si doublon, 410 si expirée) |
+| `/api/v1/notifications` | GET / PATCH | 🔐 Mes notifications + compteur / marquer lues (`{id}`, `{ids}`, `{all:true}`) |
+| `/api/v1/recruiter/company` | GET / POST | 🔐 Mon entreprise + stats / créer (409 si doublon) |
+| `/api/v1/recruiter/jobs` | GET / POST | 🔐 Mes offres / publier une offre |
+| `/api/v1/recruiter/applications` | GET | 🔐 Candidatures reçues (`?jobId=` optionnel) |
+| `/api/v1/recruiter/applications/[id]` | PATCH | 🔐 Changer le statut d'une candidature → notifie le candidat |
+| `/api/v1/payments` | GET / POST | 🔐 Historique / initier un paiement (→ pending, anti-doublon) |
+| `/api/v1/payments/[reference]` | GET | 🔐 Statut d'un paiement (polling checkout) |
+| `/api/v1/payments/[reference]/confirm` | POST | 🔐 🧪 Démo mock : simule la confirmation Mobile Money |
+| `/api/v1/payments/webhook` | POST | 🔑 Callback provider (`x-webhook-secret`) → règlement idempotent |
+| `/api/v1/courses/[slug]/reviews` | GET | Avis d'un cours + moyenne + distribution (public) |
+| `/api/v1/courses/[slug]/reviews` | POST / DELETE | 🔐 Déposer/modifier (upsert) / supprimer mon avis — **étudiants inscrits uniquement**, note du cours recalculée |
+| `/api/v1/leaderboard` | GET | Classement public XP (`?limit=`) + `currentUser` si connecté |
+| `/api/v1/certificates/[id]` | GET | Vérification publique d'un certificat (formation terminée uniquement) |
+| `/api/v1/profiles/[id]` | GET | Profil public enrichi : rang classement, certificats vérifiables, avis laissés |
+| `/api/v1/admin/overview` | GET | 🛡️ Stats plateforme temps réel (utilisateurs, revenus, avis, inscriptions 14j) |
+| `/api/v1/admin/reviews` / `[id]` | GET / DELETE | 🛡️ Derniers avis / modération (suppression + note recalculée) |
+| `/api/v1/admin/users` / `[id]` | GET / PATCH | 🛡️ Recherche utilisateurs (`?q=`, `?role=`) / suspendre-réactiver (pas soi ni admin) |
+| `/api/v1/instructor/courses` | GET / POST | 🧑‍🏫 Mes formations + stats / créer un brouillon |
+| `/api/v1/instructor/courses/[id]` | PATCH / DELETE | 🧑‍🏫 Modifier, `publish` (≥1 leçon) / `unpublish` / supprimer (409 si inscrits) |
+| `/api/v1/instructor/courses/[id]/lessons` | GET / POST | 🧑‍🏫 Leçons ordonnées / ajouter (durée du cours recalculée) |
+| `/api/v1/instructor/courses/[id]/lessons/[lessonId]` | DELETE | 🧑‍🏫 Supprimer une leçon |
+| `/api/v1/me/notification-prefs` | GET / PATCH | 🔐 Mes préférences de notifications (mutuellement exclusives par catégorie) |
+
+🔐 = authentification requise (cookie JWT `as_access`).
+🔑 = secret partagé (`PAYMENTS_WEBHOOK_SECRET`).
+
+Chaque leçon validée rapporte **+10 XP** ; terminer un cours à 100 % rapporte
+**+100 XP de bonus** et déclenche l'attribution automatique des badges dont le
+seuil d'XP est atteint (voir `src/lib/gamification.ts`).
 
 ---
 
@@ -347,7 +422,7 @@ JWT_REFRESH_SECRET=
 - [ ] Authentification JWT
 - [ ] Paiements réels FedaPay/KkiaPay
 - [ ] Upload vidéo sur Cloudflare R2
-- [ ] Progression réelle + leçons vidéo
+- [x] Progression réelle + leçons (XP, badges auto — vidéos à brancher sur R2)
 
 ### Phase 3 — Engagement
 - [ ] Programme anglais intensif 3 mois

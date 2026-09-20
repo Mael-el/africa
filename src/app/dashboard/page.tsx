@@ -7,6 +7,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth/context";
+import {
+  applicationStatusColor,
+  applicationStatusLabel,
+  type ApplicationStatus,
+} from "@/lib/format";
 
 interface DashboardData {
   user: any;
@@ -234,35 +239,79 @@ export default function DashboardPage() {
             </Link>
           </div>
 
-          {/* Progression chart */}
+          {/* Progression chart — données réelles (lesson_completions) */}
           <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-6">
-            <div className="mb-5 flex items-center justify-between">
+            <div className="mb-1 flex items-center justify-between">
               <h3 className="text-lg font-bold text-white">
                 📈 Progression (30 jours)
               </h3>
-              <span className="text-xs text-neutral-500">XP gagné / jour</span>
+              <span className="text-xs text-neutral-500">
+                XP de leçons validées / jour
+              </span>
             </div>
-            <div className="flex h-40 items-end gap-1">
+            <div className="mb-4 text-xs text-neutral-400">
+              ⚡{" "}
+              <b className="text-amber-400">
+                {data.progressChart.reduce((s, p) => s + p.xp, 0)} XP
+              </b>{" "}
+              sur la période
+              {(() => {
+                const best = data.progressChart.reduce((a, b) =>
+                  b.xp > a.xp ? b : a
+                );
+                if (best.xp === 0) return null;
+                return (
+                  <>
+                    {" "}
+                    · meilleur jour :{" "}
+                    <b className="text-orange-400">{best.xp} XP</b> le{" "}
+                    {new Date(best.date + "T00:00:00Z").toLocaleDateString(
+                      "fr-FR",
+                      { day: "numeric", month: "long" }
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+            <div className="flex h-40 items-end gap-[3px]">
               {data.progressChart.map((d, i) => {
-                const max = Math.max(...data.progressChart.map((p) => p.xp));
-                const h = (d.xp / max) * 100;
+                const max = Math.max(
+                  ...data.progressChart.map((p) => p.xp),
+                  10
+                );
+                const h = d.xp > 0 ? Math.max((d.xp / max) * 100, 4) : 0;
+                const isToday = i === data.progressChart.length - 1;
+                const dayLabel = new Date(
+                  d.date + "T00:00:00Z"
+                ).toLocaleDateString("fr-FR", {
+                  day: "numeric",
+                  month: "short",
+                });
                 return (
                   <div
-                    key={i}
-                    className="group relative flex-1 rounded-t bg-gradient-to-t from-orange-500 to-amber-400 transition hover:from-orange-400 hover:to-amber-300"
-                    style={{ height: `${h}%` }}
-                    title={`${d.date} : ${d.xp} XP`}
+                    key={d.date}
+                    className={`group relative flex-1 transition ${
+                      d.xp === 0
+                        ? "rounded-sm bg-neutral-800/70 hover:bg-neutral-700"
+                        : isToday
+                          ? "rounded-t bg-gradient-to-t from-emerald-600 to-emerald-400 hover:from-emerald-500 hover:to-emerald-300"
+                          : "rounded-t bg-gradient-to-t from-orange-500 to-amber-400 hover:from-orange-400 hover:to-amber-300"
+                    }`}
+                    style={{ height: d.xp > 0 ? `${h}%` : "3px" }}
+                    title={`${dayLabel} : ${d.xp} XP`}
                   >
-                    <div className="absolute -top-6 left-1/2 hidden -translate-x-1/2 rounded bg-black px-1.5 py-0.5 text-[10px] font-bold text-white group-hover:block">
-                      {d.xp}
+                    <div className="pointer-events-none absolute -top-8 left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded bg-black px-1.5 py-0.5 text-[10px] font-bold text-white ring-1 ring-neutral-700 group-hover:block">
+                      {dayLabel} · {d.xp} XP
                     </div>
                   </div>
                 );
               })}
             </div>
             <div className="mt-2 flex justify-between text-[10px] text-neutral-500">
-              <span>-30j</span>
-              <span>Aujourd'hui</span>
+              <span>-29 jours</span>
+              <span>
+                <span className="text-emerald-400">■</span> Aujourd'hui
+              </span>
             </div>
           </div>
 
@@ -302,26 +351,37 @@ export default function DashboardPage() {
               </h3>
               <div className="grid gap-2 sm:grid-cols-2">
                 {data.completedCourses.map((c) => (
-                  <Link
+                  <div
                     key={c.id}
-                    href={`/courses/${c.slug}`}
                     className="flex items-center gap-3 rounded-lg bg-black/30 p-3 transition hover:bg-black/50"
                   >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-neutral-900 text-xl">
-                      {c.domain?.icon ?? "📚"}
-                    </div>
-                    <div className="flex-1">
-                      <div className="text-sm font-bold text-white">
-                        {c.title}
+                    <Link
+                      href={`/courses/${c.slug}`}
+                      className="flex min-w-0 flex-1 items-center gap-3"
+                    >
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-neutral-900 text-xl">
+                        {c.domain?.icon ?? "📚"}
                       </div>
-                      <div className="text-xs text-neutral-500">
-                        {c.domain?.name}
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-bold text-white">
+                          {c.title}
+                        </div>
+                        <div className="text-xs text-neutral-500">
+                          {c.domain?.name}
+                        </div>
                       </div>
-                    </div>
+                    </Link>
                     <span className="text-xs font-bold text-emerald-400">
                       100%
                     </span>
-                  </Link>
+                    <Link
+                      href={`/certificates/${c.id}`}
+                      title="Voir le certificat"
+                      className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-xs transition hover:bg-emerald-500/20"
+                    >
+                      📜
+                    </Link>
+                  </div>
                 ))}
               </div>
             </div>
@@ -450,8 +510,10 @@ export default function DashboardPage() {
                   >
                     <div className="font-bold text-white">{a.jobTitle}</div>
                     <div className="text-neutral-500">{a.companyName}</div>
-                    <div className="mt-1 text-[10px] font-semibold capitalize text-amber-400">
-                      {a.status}
+                    <div
+                      className={`mt-1 inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold ${applicationStatusColor(a.status as ApplicationStatus)}`}
+                    >
+                      {applicationStatusLabel(a.status as ApplicationStatus)}
                     </div>
                   </div>
                 ))}

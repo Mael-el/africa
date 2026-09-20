@@ -5,8 +5,16 @@
 
 import Link from "next/link";
 import { db } from "@/db";
-import { domains, courses, users, badges, companies, jobs } from "@/db/schema";
-import { eq, sql, desc } from "drizzle-orm";
+import {
+  domains,
+  courses,
+  users,
+  userBadges,
+  companies,
+  jobs,
+  enrollments,
+} from "@/db/schema";
+import { eq, sql, desc, or, isNull, gt } from "drizzle-orm";
 import { DomainCard } from "@/components/DomainCard";
 import { CourseCard } from "@/components/CourseCard";
 
@@ -74,15 +82,42 @@ export default async function HomePage() {
       .orderBy(desc(courses.studentsCount))
       .limit(6),
     Promise.all([
-      db.select({ count: sql<number>`count(*)::int` }).from(users),
-      db.select({ count: sql<number>`count(*)::int` }).from(courses),
-      db.select({ count: sql<number>`count(*)::int` }).from(badges),
+      // Étudiants actifs (comptes vérifiés)
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(users)
+        .where(eq(users.status, "active")),
+      // Formations publiées
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(courses)
+        .where(eq(courses.status, "published")),
+      // Badges & certifications réellement décernés
+      db.select({ count: sql<number>`count(*)::int` }).from(userBadges),
+      // Entreprises partenaires
       db.select({ count: sql<number>`count(*)::int` }).from(companies),
-      db.select({ count: sql<number>`count(*)::int` }).from(jobs),
+      // Offres d'emploi encore ouvertes (non expirées)
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(jobs)
+        .where(or(isNull(jobs.expiresAt), gt(jobs.expiresAt, new Date()))),
+      // Talents formés (formations terminées à 100 %)
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(enrollments)
+        .where(eq(enrollments.status, "completed")),
     ]),
   ]);
 
-  const [userStats, courseStats, badgeStats, companyStats, jobStats] = stats;
+  const [userStats, courseStats, badgeStats, companyStats, jobStats, trainedStats] =
+    stats;
+
+  const activeStudents = userStats[0]?.count ?? 0;
+  const trainedCount = trainedStats[0]?.count ?? 0;
+
+  // Format honnête : « 12 340+ » (le + seulement s'il y en a au moins un)
+  const fmtCount = (n: number, suffix = "+") =>
+    n > 0 ? `${n.toLocaleString("fr-FR")}${suffix}` : "0";
 
   return (
     <>
@@ -99,7 +134,9 @@ export default async function HomePage() {
                   <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                   <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
                 </span>
-                + 12 000 jeunes africains formés en 2025
+                {trainedCount > 0
+                  ? `${trainedCount} talent${trainedCount > 1 ? "s" : ""} déjà formé${trainedCount > 1 ? "s" : ""} sur AfricaSkills`
+                  : "La plateforme panafricaine des compétences"}
               </div>
 
               <h1 className="mt-6 text-4xl font-black leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-6xl">
@@ -225,27 +262,27 @@ export default async function HomePage() {
       <section className="border-y border-neutral-900 bg-neutral-950/50">
         <div className="mx-auto grid max-w-7xl grid-cols-2 gap-4 px-4 py-12 sm:px-6 md:grid-cols-5 lg:px-8">
           <StatBig
-            value={`${Math.max(12000, (userStats[0]?.count ?? 0) * 1500).toLocaleString("fr-FR")}+`}
+            value={fmtCount(activeStudents)}
             label="Étudiants actifs"
             icon="🎓"
           />
           <StatBig
-            value={`${Math.max(120, (courseStats[0]?.count ?? 0) * 15)}+`}
+            value={fmtCount(courseStats[0]?.count ?? 0)}
             label="Formations"
             icon="📚"
           />
           <StatBig
-            value={`${Math.max(35, (badgeStats[0]?.count ?? 0) * 5)}+`}
-            label="Certifications"
+            value={fmtCount(badgeStats[0]?.count ?? 0)}
+            label="Badges décernés"
             icon="🏆"
           />
           <StatBig
-            value={`${Math.max(80, (companyStats[0]?.count ?? 0) * 15)}+`}
+            value={fmtCount(companyStats[0]?.count ?? 0)}
             label="Entreprises partenaires"
             icon="🏢"
           />
           <StatBig
-            value={`${Math.max(450, (jobStats[0]?.count ?? 0) * 75)}+`}
+            value={fmtCount(jobStats[0]?.count ?? 0)}
             label="Offres d'emploi"
             icon="💼"
           />

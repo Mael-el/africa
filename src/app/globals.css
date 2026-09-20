@@ -113,3 +113,32 @@ body {
 .pulse-dot {
   animation: pulse-ring 2s infinite;
 }
+
+/* ============================================================
+   IMPRESSION — Certificats
+   À l'impression : fond blanc, navigation masquée, seule la
+   feuille certificat (.certificate-sheet) est mise en page.
+   ============================================================ */
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+
+  body {
+    background-color: #ffffff !important;
+    background-image: none !important;
+  }
+
+  header,
+  footer,
+  .certificate-no-print {
+    display: none !important;
+  }
+
+  .certificate-sheet {
+    box-shadow: none !important;
+    margin: 0 auto !important;
+    break-inside: avoid;
+  }
+}

@@ -14,6 +14,7 @@ import {
   jsonb,
   pgEnum,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
@@ -87,6 +88,16 @@ export const jobTypeEnum = pgEnum("job_type", [
   "contract",
 ]);
 
+export const jobApplicationStatusEnum = pgEnum("job_application_status", [
+  "pending", // envoyée, en attente de lecture
+  "reviewed", // examinée par le recruteur
+  "shortlisted", // présélectionnée
+  "interview", // entretien planifié
+  "accepted", // offre acceptée
+  "rejected", // refusée
+  "withdrawn", // retirée par le candidat
+]);
+
 export const otpTypeEnum = pgEnum("otp_type", [
   "email_verification",
   "phone_verification",
@@ -108,6 +119,48 @@ export const skillLevelEnum = pgEnum("skill_level", [
   "advanced",
   "expert",
 ]);
+
+export const notificationTypeEnum = pgEnum("notification_type", [
+  "badge_earned", // nouveau badge débloqué
+  "course_completed", // formation terminée à 100 %
+  "application_status", // statut de candidature modifié
+  "enrollment", // inscription à un cours confirmée
+  "payment_success", // paiement confirmé
+  "system", // message générique
+]);
+
+// ============================================================
+// NOTIFICATIONS — Fil de notifications in-app
+// ============================================================
+
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    type: notificationTypeEnum("type").default("system").notNull(),
+    title: varchar("title", { length: 255 }).notNull(),
+    body: text("body"),
+    /** Lien interne vers la ressource concernée (/badges, /dashboard…) */
+    href: varchar("href", { length: 500 }),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    userReadIdx: index("notifications_user_read_idx").on(
+      table.userId,
+      table.readAt
+    ),
+    userCreatedIdx: index("notifications_user_created_idx").on(
+      table.userId,
+      table.createdAt
+    ),
+  })
+);
 
 // ============================================================
 // TABLES UTILISATEURS (avec authentification)
@@ -149,6 +202,12 @@ export const users = pgTable(
     xp: integer("xp").default(0).notNull(),
     streak: integer("streak").default(0).notNull(),
     lastActivityAt: timestamp("last_activity_at", { withTimezone: true }),
+    // Préférences de notifications in-app (null = tout activé)
+    notificationPrefs: jsonb("notification_prefs").$type<{
+      learning?: boolean;
+      applications?: boolean;
+      payments?: boolean;
+    }>(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -443,6 +502,74 @@ export const enrollments = pgTable(
 );
 
 // ============================================================
+// AVIS SUR LES COURS — Notes (1-5) + commentaires vérifiés
+// Seuls les étudiants inscrits peuvent noter une formation.
+// ============================================================
+
+export const courseReviews = pgTable(
+  "course_reviews",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    courseId: uuid("course_id")
+      .references(() => courses.id, { onDelete: "cascade" })
+      .notNull(),
+    /** Note de 1 à 5 étoiles */
+    rating: integer("rating").notNull(),
+    comment: text("comment"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    // Un seul avis par étudiant et par cours
+    userCourseIdx: uniqueIndex("course_reviews_user_course_unique").on(
+      table.userId,
+      table.courseId
+    ),
+    courseIdx: index("course_reviews_course_idx").on(table.courseId),
+  })
+);
+
+// ============================================================
+// PROGRESSION DES LEÇONS — Complétion par utilisateur
+// ============================================================
+
+export const lessonCompletions = pgTable(
+  "lesson_completions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    lessonId: uuid("lesson_id")
+      .references(() => lessons.id, { onDelete: "cascade" })
+      .notNull(),
+    enrollmentId: uuid("enrollment_id")
+      .references(() => enrollments.id, { onDelete: "cascade" })
+      .notNull(),
+    xpAwarded: integer("xp_awarded").default(10).notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    userLessonIdx: uniqueIndex("lesson_completions_user_lesson_unique").on(
+      table.userId,
+      table.lessonId
+    ),
+    enrollmentIdx: index("lesson_completions_enrollment_idx").on(
+      table.enrollmentId
+    ),
+  })
+);
+
+// ============================================================
 // BADGES
 // ============================================================
 
@@ -558,21 +685,33 @@ export const jobs = pgTable(
 );
 
 // Candidatures aux offres d'emploi
-export const jobApplications = pgTable("job_applications", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id")
-    .references(() => users.id, { onDelete: "cascade" })
-    .notNull(),
-  jobId: uuid("job_id")
-    .references(() => jobs.id, { onDelete: "cascade" })
-    .notNull(),
-  coverLetter: text("cover_letter"),
-  cvUrl: varchar("cv_url", { length: 500 }),
-  status: varchar("status", { length: 30 }).default("pending").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+export const jobApplications = pgTable(
+  "job_applications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    jobId: uuid("job_id")
+      .references(() => jobs.id, { onDelete: "cascade" })
+      .notNull(),
+    coverLetter: text("cover_letter"),
+    cvUrl: varchar("cv_url", { length: 500 }),
+    status: jobApplicationStatusEnum("status").default("pending").notNull(),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    // Un utilisateur ne peut postuler qu'une fois par offre
+    userJobIdx: uniqueIndex("job_applications_user_job_unique").on(
+      table.userId,
+      table.jobId
+    ),
+    userIdx: index("job_applications_user_idx").on(table.userId),
+  })
+);
 
 // ============================================================
 // RELATIONS DRIZZLE
@@ -595,16 +734,29 @@ export const coursesRelations = relations(courses, ({ one, many }) => ({
   }),
   lessons: many(lessons),
   enrollments: many(enrollments),
+  reviews: many(courseReviews),
 }));
 
-export const lessonsRelations = relations(lessons, ({ one }) => ({
+export const courseReviewsRelations = relations(courseReviews, ({ one }) => ({
+  user: one(users, {
+    fields: [courseReviews.userId],
+    references: [users.id],
+  }),
   course: one(courses, {
-    fields: [lessons.courseId],
+    fields: [courseReviews.courseId],
     references: [courses.id],
   }),
 }));
 
-export const enrollmentsRelations = relations(enrollments, ({ one }) => ({
+export const lessonsRelations = relations(lessons, ({ one, many }) => ({
+  course: one(courses, {
+    fields: [lessons.courseId],
+    references: [courses.id],
+  }),
+  completions: many(lessonCompletions),
+}));
+
+export const enrollmentsRelations = relations(enrollments, ({ one, many }) => ({
   user: one(users, {
     fields: [enrollments.userId],
     references: [users.id],
@@ -613,7 +765,26 @@ export const enrollmentsRelations = relations(enrollments, ({ one }) => ({
     fields: [enrollments.courseId],
     references: [courses.id],
   }),
+  lessonCompletions: many(lessonCompletions),
 }));
+
+export const lessonCompletionsRelations = relations(
+  lessonCompletions,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [lessonCompletions.userId],
+      references: [users.id],
+    }),
+    lesson: one(lessons, {
+      fields: [lessonCompletions.lessonId],
+      references: [lessons.id],
+    }),
+    enrollment: one(enrollments, {
+      fields: [lessonCompletions.enrollmentId],
+      references: [enrollments.id],
+    }),
+  })
+);
 
 export const usersRelations = relations(users, ({ many }) => ({
   enrollments: many(enrollments),
@@ -625,6 +796,16 @@ export const usersRelations = relations(users, ({ many }) => ({
   userSkills: many(userSkills),
   userProjects: many(userProjects),
   jobApplications: many(jobApplications),
+  lessonCompletions: many(lessonCompletions),
+  notifications: many(notifications),
+  courseReviews: many(courseReviews),
+}));
+
+export const notificationsRelations = relations(notifications, ({ one }) => ({
+  user: one(users, {
+    fields: [notifications.userId],
+    references: [users.id],
+  }),
 }));
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({
@@ -649,9 +830,24 @@ export const companiesRelations = relations(companies, ({ one, many }) => ({
   jobs: many(jobs),
 }));
 
-export const jobsRelations = relations(jobs, ({ one }) => ({
+export const jobsRelations = relations(jobs, ({ one, many }) => ({
   company: one(companies, {
     fields: [jobs.companyId],
     references: [companies.id],
   }),
+  applications: many(jobApplications),
 }));
+
+export const jobApplicationsRelations = relations(
+  jobApplications,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [jobApplications.userId],
+      references: [users.id],
+    }),
+    job: one(jobs, {
+      fields: [jobApplications.jobId],
+      references: [jobs.id],
+    }),
+  })
+);

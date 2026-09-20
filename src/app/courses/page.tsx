@@ -1,26 +1,41 @@
 // ============================================================
-// PAGE — TOUTES LES FORMATIONS
-// Filtres par domaine, recherche, tri
+// PAGE — CATALOGUE DES FORMATIONS
+// Recherche plein texte (titre, sous-titre, description),
+// filtres domaine / niveau / prix, tri (popularité, note réelle,
+// nouveautés, prix). SSR : l'URL porte tout l'état des filtres.
 // ============================================================
 
 import Link from "next/link";
 import { db } from "@/db";
 import { domains, courses, users } from "@/db/schema";
-import { eq, and, ilike, desc, sql } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { CourseCard } from "@/components/CourseCard";
+import { CourseFiltersBar } from "./CourseFiltersBar";
+import {
+  buildCourseConditions,
+  courseOrderBy,
+  courseSortLabel,
+  parseCourseParams,
+} from "@/lib/courses-query";
+import { levelLabel } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
 export default async function CoursesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ domain?: string; q?: string }>;
+  searchParams: Promise<{
+    domain?: string;
+    q?: string;
+    level?: string;
+    price?: string;
+    sort?: string;
+  }>;
 }) {
   const sp = await searchParams;
-  const domainSlug = sp.domain;
-  const q = sp.q?.trim();
+  const filters = parseCourseParams(sp);
 
-  // Récupérer les domaines avec compte de cours
+  // Domaines avec compteur de cours (pour les pilules)
   const allDomains = await db
     .select({
       slug: domains.slug,
@@ -33,15 +48,7 @@ export default async function CoursesPage({
     .groupBy(domains.slug, domains.name, domains.icon)
     .orderBy(domains.name);
 
-  // Construire la requête des cours
-  const baseConditions = [eq(courses.status, "published")];
-  if (q) {
-    baseConditions.push(ilike(courses.title, `%${q.replace(/[%_]/g, "\\$&")}%`));
-  }
-  if (domainSlug) {
-    baseConditions.push(eq(domains.slug, domainSlug));
-  }
-
+  // Cours filtrés + triés (logique partagée avec /api/courses)
   const filteredCourses = await db
     .select({
       slug: courses.slug,
@@ -63,10 +70,33 @@ export default async function CoursesPage({
     .from(courses)
     .innerJoin(domains, eq(courses.domainId, domains.id))
     .leftJoin(users, eq(courses.instructorId, users.id))
-    .where(and(...baseConditions))
-    .orderBy(desc(courses.studentsCount));
+    .where(and(...buildCourseConditions(filters)))
+    .orderBy(...courseOrderBy(filters.sort));
 
-  const currentDomain = allDomains.find((d) => d.slug === domainSlug);
+  const currentDomain = allDomains.find((d) => d.slug === filters.domain);
+
+  /**
+   * Construit un href préservant les filtres courants — utilisé par
+   * les pilules de domaine pour ne pas perdre recherche/niveau/prix/tri.
+   */
+  function hrefFor(overrides: { domain?: string }): string {
+    const params = new URLSearchParams();
+    const domain = "domain" in overrides ? overrides.domain : filters.domain;
+    if (domain) params.set("domain", domain);
+    if (filters.q) params.set("q", filters.q);
+    if (filters.level) params.set("level", filters.level);
+    if (filters.price) params.set("price", filters.price);
+    if (filters.sort !== "popular") params.set("sort", filters.sort);
+    const qs = params.toString();
+    return `/courses${qs ? `?${qs}` : ""}`;
+  }
+
+  // Résumé lisible des filtres actifs
+  const activeFilters: string[] = [];
+  if (filters.q) activeFilters.push(`« ${filters.q} »`);
+  if (filters.level) activeFilters.push(levelLabel(filters.level));
+  if (filters.price) activeFilters.push(filters.price === "free" ? "Gratuit" : "Payant");
+  if (filters.sort !== "popular") activeFilters.push(`tri : ${courseSortLabel(filters.sort)}`);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
@@ -82,18 +112,20 @@ export default async function CoursesPage({
         </h1>
         <p className="mt-3 max-w-2xl text-neutral-400">
           {filteredCourses.length} formation
-          {filteredCourses.length > 1 ? "s" : ""} disponible
-          {filteredCourses.length > 1 ? "s" : ""}. Apprends à ton rythme, paie
-          en Mobile Money, décroche ton badge.
+          {filteredCourses.length > 1 ? "s" : ""}
+          {activeFilters.length > 0
+            ? ` pour ${activeFilters.join(" · ")}`
+            : " disponible" + (filteredCourses.length > 1 ? "s" : "")}
+          . Apprends à ton rythme, paie en Mobile Money, décroche ton badge.
         </p>
       </div>
 
-      {/* Barre de filtres */}
-      <div className="mb-8 flex flex-wrap gap-2">
+      {/* Pilules de domaine (préservent les autres filtres) */}
+      <div className="mb-6 flex flex-wrap gap-2">
         <Link
-          href="/courses"
+          href={hrefFor({ domain: undefined })}
           className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-            !domainSlug
+            !filters.domain
               ? "bg-orange-500 text-black"
               : "border border-neutral-800 text-neutral-400 hover:border-orange-500/50 hover:text-white"
           }`}
@@ -103,9 +135,9 @@ export default async function CoursesPage({
         {allDomains.map((d) => (
           <Link
             key={d.slug}
-            href={`/courses?domain=${d.slug}`}
+            href={hrefFor({ domain: d.slug })}
             className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-              domainSlug === d.slug
+              filters.domain === d.slug
                 ? "bg-orange-500 text-black"
                 : "border border-neutral-800 text-neutral-400 hover:border-orange-500/50 hover:text-white"
             }`}
@@ -116,18 +148,16 @@ export default async function CoursesPage({
         ))}
       </div>
 
-      {/* Recherche */}
-      <form className="mb-8">
-        <input
-          type="text"
-          name="q"
-          defaultValue={q}
-          placeholder="🔍 Rechercher une formation..."
-          className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-white placeholder-neutral-500 outline-none transition focus:border-orange-500"
-        />
-      </form>
+      {/* Barre de filtres (recherche, niveau, prix, tri) — client */}
+      <CourseFiltersBar
+        domain={filters.domain}
+        q={filters.q}
+        level={filters.level}
+        price={filters.price}
+        sort={filters.sort}
+      />
 
-      {/* Grille */}
+      {/* Grille de résultats */}
       {filteredCourses.length === 0 ? (
         <div className="rounded-2xl border border-neutral-800 bg-neutral-950 p-16 text-center">
           <div className="text-5xl">📭</div>
@@ -135,9 +165,14 @@ export default async function CoursesPage({
             Aucune formation trouvée
           </h3>
           <p className="mt-2 text-neutral-400">
-            Essaie un autre filtre ou reviens bientôt, on ajoute de nouveaux
-            cours chaque semaine.
+            Essaie d’élargir ta recherche ou de changer de filtre.
           </p>
+          <Link
+            href="/courses"
+            className="mt-4 inline-block rounded-xl border border-neutral-700 px-5 py-2.5 text-sm font-semibold text-neutral-200 transition hover:border-orange-500/50 hover:text-orange-300"
+          >
+            ✕ Réinitialiser tous les filtres
+          </Link>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">

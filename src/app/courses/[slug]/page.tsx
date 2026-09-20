@@ -9,6 +9,7 @@ import { courses, domains, users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { formatXof, formatRating, formatStudents, levelLabel } from "@/lib/format";
 import { CourseCheckout } from "./CourseCheckout";
+import { CourseReviews } from "./CourseReviews";
 
 export const dynamic = "force-dynamic";
 
@@ -176,6 +177,9 @@ export default async function CourseDetailPage({
               </div>
             </div>
           </section>
+
+          {/* Avis des étudiants (composant client) */}
+          <CourseReviews courseSlug={course.slug} />
         </div>
 
         {/* Sidebar */}

@@ -6,7 +6,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { payments, enrollments, users, courses } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
+import { getCurrentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -41,11 +42,27 @@ export async function POST(req: Request) {
       );
     }
 
-    // Trouver ou créer l'utilisateur (démo)
-    let [user] = userId
-      ? await db.select().from(users).where(eq(users.id, userId)).limit(1)
-      : [];
+    // Trouver l'utilisateur :
+    // 1. utilisateur connecté (cookie JWT) → prioritaire
+    // 2. userId explicite (compatibilité)
+    // 3. sinon, création d'un compte de démonstration
+    const current = await getCurrentUser();
 
+    let user: typeof users.$inferSelect | undefined;
+    if (current) {
+      [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, current.userId))
+        .limit(1);
+    }
+    if (!user && userId) {
+      [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+    }
     if (!user) {
       [user] = await db
         .insert(users)
@@ -80,16 +97,41 @@ export async function POST(req: Request) {
       })
       .returning();
 
-    // Créer l'inscription
-    await db
-      .insert(enrollments)
-      .values({
+    // Créer l'inscription (idempotent) + compteur d'étudiants
+    const [existingEnrollment] = await db
+      .select({ id: enrollments.id })
+      .from(enrollments)
+      .where(
+        and(
+          eq(enrollments.userId, user.id),
+          eq(enrollments.courseId, course.id)
+        )
+      )
+      .limit(1);
+
+    if (!existingEnrollment) {
+      await db.insert(enrollments).values({
         userId: user.id,
         courseId: course.id,
         progress: 0,
         status: "active",
-      })
-      .onConflictDoNothing();
+      });
+      await db
+        .update(courses)
+        .set({ studentsCount: sql`${courses.studentsCount} + 1` })
+        .where(eq(courses.id, course.id));
+    } else {
+      // Réactive une inscription précédemment annulée
+      await db
+        .update(enrollments)
+        .set({ status: "active" })
+        .where(
+          and(
+            eq(enrollments.id, existingEnrollment.id),
+            eq(enrollments.status, "cancelled")
+          )
+        );
+    }
 
     return NextResponse.json({
       ok: true,

@@ -23,7 +23,7 @@ export default async function PublicProfilePage({
   const data = await res.json();
   if (!data.ok) notFound();
 
-  const { profile, skills, projects, badges, domains, statistics } = data;
+  const { profile, skills, projects, badges, domains, certificates, reviews, statistics } = data;
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-12">
@@ -81,8 +81,9 @@ export default async function PublicProfilePage({
       </div>
 
       {/* Stats rapides */}
-      <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <MiniStat icon="⚡" label="XP" value={profile.xp} />
+        <MiniStat icon="🏅" label="Rang classement" value={`#${statistics.rank}`} />
         <MiniStat icon="🔥" label="Streak" value={`${profile.streak}j`} />
         <MiniStat icon="🎓" label="Cours terminés" value={statistics.coursesCompleted} />
         <MiniStat icon="🏆" label="Badges" value={statistics.badgesCount} />
@@ -100,6 +101,40 @@ export default async function PublicProfilePage({
 
       <div className="mt-8 grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
+          {/* Certificats — formations terminées (vérifiables) */}
+          {certificates.length > 0 && (
+            <Section title="📜 Certificats vérifiés">
+              <div className="grid gap-3 sm:grid-cols-2">
+                {certificates.map((c: any) => (
+                  <Link
+                    key={c.enrollmentId}
+                    href={`/certificates/${c.enrollmentId}`}
+                    className="group flex items-center gap-3 rounded-xl border border-neutral-800 bg-black/30 p-4 transition hover:border-emerald-500/40"
+                  >
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-neutral-900 text-xl">
+                      {c.domainIcon ?? "🎓"}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-bold text-white">
+                        {c.title}
+                      </div>
+                      <div className="text-[11px] text-neutral-500">
+                        {c.durationHours ?? 0}h · terminée le{" "}
+                        {new Date(c.completedAt).toLocaleDateString("fr-FR", {
+                          month: "long",
+                          year: "numeric",
+                        })}
+                      </div>
+                    </div>
+                    <span className="shrink-0 text-xs font-bold text-emerald-400 transition group-hover:translate-x-0.5">
+                      Vérifier →
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </Section>
+          )}
+
           {/* Domaines */}
           {domains.length > 0 && (
             <Section title="🎯 Domaines d'intérêt">
@@ -114,6 +149,46 @@ export default async function PublicProfilePage({
                       · {d.level}
                     </span>
                   </span>
+                ))}
+              </div>
+            </Section>
+          )}
+
+          {/* Avis laissés — témoignages vérifiés */}
+          {reviews.length > 0 && (
+            <Section title="⭐ Avis laissés">
+              <div className="grid gap-3 sm:grid-cols-2">
+                {reviews.map((r: any, i: number) => (
+                  <div
+                    key={i}
+                    className="rounded-xl border border-neutral-800 bg-black/30 p-4"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <Link
+                        href={`/courses/${r.courseSlug}`}
+                        className="truncate text-sm font-bold text-orange-400 hover:text-orange-300"
+                      >
+                        {r.courseTitle}
+                      </Link>
+                      <span className="shrink-0 text-[10px] text-neutral-600">
+                        {new Date(r.createdAt).toLocaleDateString("fr-FR", {
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-xs leading-none">
+                      <span className="text-amber-400">
+                        {"★".repeat(r.rating)}
+                      </span>
+                      <span className="text-neutral-700">
+                        {"★".repeat(5 - r.rating)}
+                      </span>
+                    </div>
+                    <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-neutral-400">
+                      {r.comment}
+                    </p>
+                  </div>
                 ))}
               </div>
             </Section>

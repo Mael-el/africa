@@ -86,6 +86,23 @@ export function jobTypeLabel(
 }
 
 /**
+ * Temps relatif en français ("il y a 5 min", "il y a 2 j"…).
+ * À appeler hors du rendu (handlers, callbacks) — utilise Date.now().
+ */
+export function relativeTime(date: Date | string): string {
+  const d = typeof date === "string" ? new Date(date) : date;
+  const diffSec = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
+  if (diffSec < 60) return "à l'instant";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `il y a ${diffMin} min`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return `il y a ${diffH} h`;
+  const diffD = Math.floor(diffH / 24);
+  if (diffD < 30) return `il y a ${diffD} j`;
+  return d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+}
+
+/**
  * Génère un slug URL-friendly à partir d'une chaîne.
  */
 export function slugify(text: string): string {
@@ -95,4 +112,57 @@ export function slugify(text: string): string {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+export type ApplicationStatus =
+  | "pending"
+  | "reviewed"
+  | "shortlisted"
+  | "interview"
+  | "accepted"
+  | "rejected"
+  | "withdrawn";
+
+/**
+ * Libellé français pour un statut de candidature.
+ */
+export function applicationStatusLabel(status: ApplicationStatus): string {
+  switch (status) {
+    case "pending":
+      return "En attente";
+    case "reviewed":
+      return "Examinée";
+    case "shortlisted":
+      return "Présélectionnée";
+    case "interview":
+      return "Entretien";
+    case "accepted":
+      return "Acceptée 🎉";
+    case "rejected":
+      return "Refusée";
+    case "withdrawn":
+      return "Retirée";
+  }
+}
+
+/**
+ * Classes Tailwind associées à un statut de candidature.
+ */
+export function applicationStatusColor(status: ApplicationStatus): string {
+  switch (status) {
+    case "pending":
+      return "bg-amber-500/15 text-amber-300 border-amber-500/30";
+    case "reviewed":
+      return "bg-sky-500/15 text-sky-300 border-sky-500/30";
+    case "shortlisted":
+      return "bg-violet-500/15 text-violet-300 border-violet-500/30";
+    case "interview":
+      return "bg-blue-500/15 text-blue-300 border-blue-500/30";
+    case "accepted":
+      return "bg-emerald-500/15 text-emerald-300 border-emerald-500/30";
+    case "rejected":
+      return "bg-red-500/15 text-red-300 border-red-500/30";
+    case "withdrawn":
+      return "bg-neutral-500/15 text-neutral-400 border-neutral-600";
+  }
 }

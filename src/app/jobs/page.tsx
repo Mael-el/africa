@@ -12,6 +12,8 @@ export const dynamic = "force-dynamic";
 export default async function JobsPage() {
   const allJobs = await db
     .select({
+      id: jobs.id,
+      slug: jobs.slug,
       title: jobs.title,
       description: jobs.description,
       type: jobs.type,
@@ -68,9 +70,10 @@ export default async function JobsPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-            {allJobs.map((j, i) => (
+            {allJobs.map((j) => (
               <JobCard
-                key={i}
+                key={j.id}
+                slug={j.slug}
                 title={j.title}
                 type={j.type}
                 location={j.location}
